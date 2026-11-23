@@ -1,0 +1,947 @@
+-- ADITHYA | v2.0 — Profile Avatar + Live Ping, FPS & Username + Background (16130395622)
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+
+local TOGGLE_IMAGE_ID = "rbxassetid://16130395622"
+local BG_IMAGE_ID = "rbxassetid://16130395622"
+local SAVE_FILE = "AdithyaV2_Tabs.json"
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+if playerGui:FindFirstChild("AdithyaV2UI") then
+	playerGui.AdithyaV2UI:Destroy()
+end
+
+-- Persistent State Across Re-execution
+_G.AdithyaSavedState = _G.AdithyaSavedState or {
+	tabs = {
+		{ name = "Script 1", code = "" },
+		{ name = "Script 2", code = "" },
+	},
+	activeTab = 1,
+	savedSnippet = "",
+}
+
+local function loadDiskState()
+	if typeof(isfile) == "function" and typeof(readfile) == "function" then
+		local ok, exists = pcall(isfile, SAVE_FILE)
+		if ok and exists then
+			local readOk, raw = pcall(readfile, SAVE_FILE)
+			if readOk and type(raw) == "string" then
+				local decOk, data = pcall(function()
+					return HttpService:JSONDecode(raw)
+				end)
+				if decOk and type(data) == "table" and type(data.tabs) == "table" and #data.tabs > 0 then
+					_G.AdithyaSavedState = data
+				end
+			end
+		end
+	end
+end
+
+local function persistState()
+	if typeof(writefile) == "function" then
+		pcall(function()
+			writefile(SAVE_FILE, HttpService:JSONEncode(_G.AdithyaSavedState))
+		end)
+	end
+end
+
+loadDiskState()
+local state = _G.AdithyaSavedState
+if type(state.tabs) ~= "table" or #state.tabs == 0 then
+	state.tabs = { { name = "Script 1", code = "" } }
+end
+
+local PALETTE = {
+	WindowBg = Color3.fromRGB(13, 17, 27),
+	HeaderBg = Color3.fromRGB(18, 24, 38),
+	SurfaceRaised = Color3.fromRGB(24, 32, 50),
+	TabIdle = Color3.fromRGB(20, 27, 42),
+	TabActive = Color3.fromRGB(45, 122, 240),
+	EditorBg = Color3.fromRGB(8, 11, 18),
+	ActiveLineBg = Color3.fromRGB(22, 31, 50),
+	Border = Color3.fromRGB(62, 94, 148),
+	BorderGlow = Color3.fromRGB(128, 182, 255),
+	Accent = Color3.fromRGB(45, 122, 240),
+	AccentHover = Color3.fromRGB(76, 150, 255),
+	AccentPress = Color3.fromRGB(30, 92, 192),
+	BtnIdle = Color3.fromRGB(28, 37, 56),
+	BtnHover = Color3.fromRGB(40, 52, 77),
+	BtnPress = Color3.fromRGB(20, 27, 41),
+	Text = Color3.fromRGB(244, 248, 255),
+	SubText = Color3.fromRGB(138, 156, 186),
+	Gutter = Color3.fromRGB(88, 104, 134),
+	GutterActive = Color3.fromRGB(168, 204, 255),
+	Success = Color3.fromRGB(88, 222, 146),
+	Warn = Color3.fromRGB(245, 196, 82),
+	Error = Color3.fromRGB(246, 96, 106),
+}
+
+local LINE_HEIGHT = 18
+
+local function tween(obj, duration, props, style, dir)
+	local info = TweenInfo.new(
+		duration or 0.16,
+		style or Enum.EasingStyle.Quart,
+		dir or Enum.EasingDirection.Out
+	)
+	local anim = TweenService:Create(obj, info, props)
+	anim:Play()
+	return anim
+end
+
+local function round(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+	return c
+end
+
+local function stroke(parent, color, thickness, transparency, gradColors)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness or 1
+	s.Transparency = transparency or 0.25
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+	if gradColors then
+		local g = Instance.new("UIGradient")
+		g.Rotation = 135
+		g.Color = gradColors
+		g.Parent = s
+	end
+	return s
+end
+
+local rimGradient = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(165, 205, 255)),
+	ColorSequenceKeypoint.new(0.45, Color3.fromRGB(78, 114, 175)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(32, 46, 72)),
+})
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AdithyaV2UI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- Draggable Floating Toggle Button at Top Middle
+local toggleBtn = Instance.new("ImageButton")
+toggleBtn.Name = "AdithyaToggle"
+toggleBtn.AnchorPoint = Vector2.new(0.5, 0)
+toggleBtn.Size = UDim2.new(0, 64, 0, 78)
+toggleBtn.Position = UDim2.new(0.5, 0, 0, 14)
+toggleBtn.BackgroundColor3 = PALETTE.HeaderBg
+toggleBtn.Image = TOGGLE_IMAGE_ID
+toggleBtn.ScaleType = Enum.ScaleType.Crop
+toggleBtn.AutoButtonColor = false
+toggleBtn.ZIndex = 10
+toggleBtn.Parent = screenGui
+round(toggleBtn, 16)
+local toggleStroke = stroke(toggleBtn, Color3.new(1, 1, 1), 1.6, 0.12, rimGradient)
+
+local toggleSheen = Instance.new("Frame")
+toggleSheen.Size = UDim2.new(1, 0, 0.42, 0)
+toggleSheen.BackgroundColor3 = Color3.new(1, 1, 1)
+toggleSheen.BackgroundTransparency = 0.92
+toggleSheen.BorderSizePixel = 0
+toggleSheen.ZIndex = 2
+toggleSheen.Parent = toggleBtn
+round(toggleSheen, 16)
+
+local sheenGrad = Instance.new("UIGradient")
+sheenGrad.Rotation = 90
+sheenGrad.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.72),
+	NumberSequenceKeypoint.new(1, 1),
+})
+sheenGrad.Parent = toggleSheen
+
+local toggleTag = Instance.new("TextLabel")
+toggleTag.Size = UDim2.new(1, -8, 0, 18)
+toggleTag.Position = UDim2.new(0, 4, 1, -22)
+toggleTag.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
+toggleTag.BackgroundTransparency = 0.16
+toggleTag.Text = "ADITHYA"
+toggleTag.TextColor3 = PALETTE.Text
+toggleTag.Font = Enum.Font.GothamBold
+toggleTag.TextSize = 10
+toggleTag.ZIndex = 4
+toggleTag.Parent = toggleBtn
+round(toggleTag, 6)
+stroke(toggleTag, PALETTE.BorderGlow, 0.8, 0.45)
+
+toggleBtn.MouseEnter:Connect(function()
+	tween(toggleBtn, 0.15, { Size = UDim2.new(0, 68, 0, 83) })
+	tween(toggleStroke, 0.15, { Transparency = 0, Thickness = 2 })
+end)
+
+toggleBtn.MouseLeave:Connect(function()
+	tween(toggleBtn, 0.15, { Size = UDim2.new(0, 64, 0, 78) })
+	tween(toggleStroke, 0.15, { Transparency = 0.12, Thickness = 1.6 })
+end)
+
+-- Main Executor Window
+local WIN_W, WIN_H = 564, 424
+local DEFAULT_WIN_POS = UDim2.new(0.5, -WIN_W / 2, 0.5, -180)
+
+local window = Instance.new("Frame")
+window.Name = "MainWindow"
+window.Size = UDim2.new(0, WIN_W, 0, WIN_H)
+window.Position = DEFAULT_WIN_POS
+window.BackgroundColor3 = PALETTE.WindowBg
+window.BorderSizePixel = 0
+window.ClipsDescendants = true
+window.Parent = screenGui
+round(window, 16)
+stroke(window, Color3.new(1, 1, 1), 1.4, 0.18, rimGradient)
+
+-- Layered Background Artwork + Dark Scrim
+local bgImage = Instance.new("ImageLabel")
+bgImage.Name = "BackgroundArtwork"
+bgImage.Size = UDim2.new(1, 0, 1, 0)
+bgImage.Position = UDim2.new(0, 0, 0, 0)
+bgImage.BackgroundTransparency = 1
+bgImage.Image = BG_IMAGE_ID
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ImageTransparency = 0.76
+bgImage.ZIndex = 0
+bgImage.Parent = window
+
+local bgScrim = Instance.new("Frame")
+bgScrim.Name = "BackgroundScrim"
+bgScrim.Size = UDim2.new(1, 0, 1, 0)
+bgScrim.Position = UDim2.new(0, 0, 0, 0)
+bgScrim.BackgroundColor3 = PALETTE.WindowBg
+bgScrim.BackgroundTransparency = 0.36
+bgScrim.BorderSizePixel = 0
+bgScrim.ZIndex = 1
+bgScrim.Parent = window
+
+local winGrad = Instance.new("UIGradient")
+winGrad.Rotation = 140
+winGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 36, 56)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(13, 17, 27)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(9, 12, 20)),
+})
+winGrad.Parent = bgScrim
+
+local topAccent = Instance.new("Frame")
+topAccent.Size = UDim2.new(1, 0, 0, 2)
+topAccent.Position = UDim2.new(0, 0, 0, 0)
+topAccent.BackgroundColor3 = PALETTE.BorderGlow
+topAccent.BackgroundTransparency = 0.25
+topAccent.BorderSizePixel = 0
+topAccent.ZIndex = 5
+topAccent.Parent = window
+
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 42)
+titleBar.BackgroundColor3 = PALETTE.HeaderBg
+titleBar.BackgroundTransparency = 0.32
+titleBar.BorderSizePixel = 0
+titleBar.ZIndex = 3
+titleBar.Parent = window
+
+local titleDivider = Instance.new("Frame")
+titleDivider.Size = UDim2.new(1, -28, 0, 1)
+titleDivider.Position = UDim2.new(0, 14, 1, -1)
+titleDivider.BackgroundColor3 = PALETTE.Border
+titleDivider.BackgroundTransparency = 0.65
+titleDivider.BorderSizePixel = 0
+titleDivider.ZIndex = 4
+titleDivider.Parent = titleBar
+
+local badge = Instance.new("Frame")
+badge.Size = UDim2.new(0, 26, 0, 26)
+badge.Position = UDim2.new(0, 14, 0.5, -13)
+badge.BackgroundColor3 = PALETTE.SurfaceRaised
+badge.BorderSizePixel = 0
+badge.ZIndex = 4
+badge.Parent = titleBar
+round(badge, 8)
+stroke(badge, PALETTE.BorderGlow, 1, 0.35)
+
+local boltIcon = Instance.new("TextLabel")
+boltIcon.Size = UDim2.new(1, 0, 1, 0)
+boltIcon.BackgroundTransparency = 1
+boltIcon.Text = "⚡"
+boltIcon.TextColor3 = PALETTE.AccentHover
+boltIcon.Font = Enum.Font.GothamBold
+boltIcon.TextSize = 15
+boltIcon.ZIndex = 5
+boltIcon.Parent = badge
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(0, 260, 1, 0)
+titleText.Position = UDim2.new(0, 48, 0, 0)
+titleText.BackgroundTransparency = 1
+titleText.RichText = true
+titleText.Text = '<b>ADITHYA</b> <font color="#8A9CBB">| v2.0</font>'
+titleText.TextColor3 = PALETTE.Text
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 14
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.ZIndex = 4
+titleText.Parent = titleBar
+
+local function makeWinControl(text, offsetX, accentColor, callback)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0, 24, 0, 24)
+	b.Position = UDim2.new(1, offsetX, 0.5, -12)
+	b.BackgroundColor3 = accentColor or PALETTE.BtnIdle
+	b.BackgroundTransparency = accentColor and 0.1 or 0.35
+	b.TextColor3 = PALETTE.Text
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 12
+	b.Text = text
+	b.AutoButtonColor = false
+	b.ZIndex = 4
+	b.Parent = titleBar
+	round(b, 12)
+	stroke(b, PALETTE.Border, 0.8, 0.5)
+
+	b.MouseEnter:Connect(function()
+		tween(b, 0.12, { BackgroundTransparency = 0 })
+	end)
+	b.MouseLeave:Connect(function()
+		tween(b, 0.12, { BackgroundTransparency = accentColor and 0.1 or 0.35 })
+	end)
+	b.MouseButton1Click:Connect(callback)
+	return b
+end
+
+-- Smooth Drag Helper with Tap/Drag Disambiguation
+local function attachDrag(handle, target)
+	local dragging = false
+	local moved = false
+	local dragStart, startPos
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			moved = false
+			dragStart = input.Position
+			startPos = target.Position
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			if delta.Magnitude > 5 then
+				moved = true
+			end
+			target.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if dragging then
+				dragging = false
+				task.delay(0.03, function()
+					moved = false
+				end)
+			end
+		end
+	end)
+
+	return function()
+		return moved
+	end
+end
+
+attachDrag(titleBar, window)
+local wasDragged = attachDrag(toggleBtn, toggleBtn)
+
+-- Open / Minimize Animation
+local isVisible = true
+local function setOpen(state)
+	isVisible = state
+	if isVisible then
+		window.Visible = true
+		window.Size = UDim2.new(0, WIN_W - 36, 0, WIN_H - 36)
+		tween(window, 0.22, { Size = UDim2.new(0, WIN_W, 0, WIN_H) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	else
+		local anim = tween(window, 0.16, { Size = UDim2.new(0, WIN_W - 36, 0, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		anim.Completed:Connect(function()
+			if not isVisible then
+				window.Visible = false
+			end
+		end)
+	end
+end
+
+makeWinControl("—", -92, nil, function() setOpen(false) end)
+makeWinControl("●", -62, PALETTE.Accent, function()
+	tween(window, 0.18, { Position = DEFAULT_WIN_POS })
+	toggleBtn.AnchorPoint = Vector2.new(0.5, 0)
+	tween(toggleBtn, 0.18, { Position = UDim2.new(0.5, 0, 0, 14) })
+end)
+makeWinControl("✕", -32, nil, function() setOpen(false) end)
+
+toggleBtn.MouseButton1Click:Connect(function()
+	if not wasDragged() then
+		setOpen(not isVisible)
+	end
+end)
+
+-- Top Tab Bar
+local tabStrip = Instance.new("ScrollingFrame")
+tabStrip.Size = UDim2.new(1, -36, 0, 28)
+tabStrip.Position = UDim2.new(0, 18, 0, 48)
+tabStrip.BackgroundTransparency = 1
+tabStrip.BorderSizePixel = 0
+tabStrip.ScrollBarThickness = 2
+tabStrip.ScrollBarImageColor3 = PALETTE.BorderGlow
+tabStrip.ScrollingDirection = Enum.ScrollingDirection.X
+tabStrip.CanvasSize = UDim2.new(0, 0, 0, 0)
+tabStrip.ZIndex = 3
+tabStrip.Parent = window
+
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+tabLayout.Padding = UDim.new(0, 6)
+tabLayout.Parent = tabStrip
+
+-- Recessed Bounded Scrollable Editor Container
+local editorFrame = Instance.new("Frame")
+editorFrame.Size = UDim2.new(1, -36, 0, 222)
+editorFrame.Position = UDim2.new(0, 18, 0, 82)
+editorFrame.BackgroundColor3 = PALETTE.EditorBg
+editorFrame.BackgroundTransparency = 0.24
+editorFrame.ClipsDescendants = true
+editorFrame.ZIndex = 3
+editorFrame.Parent = window
+round(editorFrame, 12)
+local editorStroke = stroke(editorFrame, PALETTE.Border, 1.15, 0.32)
+
+local scroller = Instance.new("ScrollingFrame")
+scroller.Size = UDim2.new(1, -4, 1, -8)
+scroller.Position = UDim2.new(0, 2, 0, 4)
+scroller.BackgroundTransparency = 1
+scroller.BorderSizePixel = 0
+scroller.ScrollBarThickness = 4
+scroller.ScrollBarImageColor3 = PALETTE.BorderGlow
+scroller.ScrollBarImageTransparency = 0.35
+scroller.CanvasSize = UDim2.new(0, 0, 0, 214)
+scroller.ZIndex = 4
+scroller.Parent = editorFrame
+
+local activeLineBar = Instance.new("Frame")
+activeLineBar.Size = UDim2.new(1, -8, 0, LINE_HEIGHT)
+activeLineBar.Position = UDim2.new(0, 4, 0, 4)
+activeLineBar.BackgroundColor3 = PALETTE.ActiveLineBg
+activeLineBar.BackgroundTransparency = 0.35
+activeLineBar.BorderSizePixel = 0
+activeLineBar.ZIndex = 4
+activeLineBar.Parent = scroller
+round(activeLineBar, 4)
+
+local gutter = Instance.new("TextLabel")
+gutter.Size = UDim2.new(0, 32, 1, -8)
+gutter.Position = UDim2.new(0, 6, 0, 4)
+gutter.BackgroundTransparency = 1
+gutter.TextColor3 = PALETTE.Gutter
+gutter.Font = Enum.Font.Code
+gutter.TextSize = 13
+gutter.TextYAlignment = Enum.TextYAlignment.Top
+gutter.ZIndex = 5
+gutter.Text = "1"
+gutter.Parent = scroller
+
+local codeBox = Instance.new("TextBox")
+codeBox.Size = UDim2.new(1, -50, 1, -8)
+codeBox.Position = UDim2.new(0, 42, 0, 4)
+codeBox.BackgroundTransparency = 1
+codeBox.TextColor3 = PALETTE.Text
+codeBox.PlaceholderText = "-- Write Luau code here..."
+codeBox.PlaceholderColor3 = PALETTE.SubText
+codeBox.Font = Enum.Font.Code
+codeBox.TextSize = 13
+codeBox.MultiLine = true
+codeBox.TextWrapped = true
+codeBox.ClearTextOnFocus = false
+codeBox.TextXAlignment = Enum.TextXAlignment.Left
+codeBox.TextYAlignment = Enum.TextYAlignment.Top
+codeBox.ZIndex = 5
+codeBox.Text = ""
+codeBox.Parent = scroller
+
+-- Telemetry Strip Directly Below Script Editor (Avatar + Username + FPS + Ping)
+local telemetryBar = Instance.new("Frame")
+telemetryBar.Name = "TelemetryBar"
+telemetryBar.Size = UDim2.new(1, -36, 0, 28)
+telemetryBar.Position = UDim2.new(0, 18, 0, 310)
+telemetryBar.BackgroundColor3 = PALETTE.HeaderBg
+telemetryBar.BackgroundTransparency = 0.32
+telemetryBar.BorderSizePixel = 0
+telemetryBar.ZIndex = 3
+telemetryBar.Parent = window
+round(telemetryBar, 8)
+stroke(telemetryBar, PALETTE.Border, 1, 0.4)
+
+local avatarImg = Instance.new("ImageLabel")
+avatarImg.Name = "ProfileAvatar"
+avatarImg.Size = UDim2.new(0, 20, 0, 20)
+avatarImg.Position = UDim2.new(0, 6, 0.5, -10)
+avatarImg.BackgroundColor3 = PALETTE.SurfaceRaised
+avatarImg.Image = ""
+avatarImg.ScaleType = Enum.ScaleType.Crop
+avatarImg.ZIndex = 4
+avatarImg.Parent = telemetryBar
+round(avatarImg, 10)
+stroke(avatarImg, PALETTE.BorderGlow, 1, 0.3)
+
+task.spawn(function()
+	local ok, thumbUrl = pcall(function()
+		return Players:GetUserThumbnailAsync(
+			player.UserId,
+			Enum.ThumbnailType.HeadShot,
+			Enum.ThumbnailSize.Size100x100
+		)
+	end)
+	if ok and type(thumbUrl) == "string" and thumbUrl ~= "" and avatarImg.Parent then
+		avatarImg.Image = thumbUrl
+	end
+end)
+
+local userLabel = Instance.new("TextLabel")
+userLabel.Size = UDim2.new(0.46, -32, 1, 0)
+userLabel.Position = UDim2.new(0, 32, 0, 0)
+userLabel.BackgroundTransparency = 1
+userLabel.Text = tostring(player.Name)
+userLabel.TextColor3 = PALETTE.Text
+userLabel.Font = Enum.Font.GothamSemibold
+userLabel.TextSize = 11
+userLabel.TextXAlignment = Enum.TextXAlignment.Left
+userLabel.TextTruncate = Enum.TextTruncate.AtEnd
+userLabel.ZIndex = 4
+userLabel.Parent = telemetryBar
+
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(0.27, 0, 1, 0)
+fpsLabel.Position = UDim2.new(0.46, 0, 0, 0)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.Text = "FPS: --"
+fpsLabel.TextColor3 = PALETTE.Success
+fpsLabel.Font = Enum.Font.Code
+fpsLabel.TextSize = 11
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Center
+fpsLabel.ZIndex = 4
+fpsLabel.Parent = telemetryBar
+
+local pingLabel = Instance.new("TextLabel")
+pingLabel.Size = UDim2.new(0.27, -10, 1, 0)
+pingLabel.Position = UDim2.new(0.73, 0, 0, 0)
+pingLabel.BackgroundTransparency = 1
+pingLabel.Text = "Ping: -- ms"
+pingLabel.TextColor3 = PALETTE.BorderGlow
+pingLabel.Font = Enum.Font.Code
+pingLabel.TextSize = 11
+pingLabel.TextXAlignment = Enum.TextXAlignment.Right
+pingLabel.ZIndex = 4
+pingLabel.Parent = telemetryBar
+
+-- Live FPS & Ping Loop
+local frameCount = 0
+local elapsedAccum = 0
+RunService.RenderStepped:Connect(function(dt)
+	frameCount += 1
+	elapsedAccum += dt
+	if elapsedAccum >= 0.35 then
+		local fps = math.round(frameCount / elapsedAccum)
+		frameCount = 0
+		elapsedAccum = 0
+
+		fpsLabel.Text = "FPS: " .. tostring(fps)
+		if fps >= 55 then
+			fpsLabel.TextColor3 = PALETTE.Success
+		elseif fps >= 30 then
+			fpsLabel.TextColor3 = PALETTE.Warn
+		else
+			fpsLabel.TextColor3 = PALETTE.Error
+		end
+
+		local pingMs
+		local okPing, networkPing = pcall(function()
+			return player:GetNetworkPing()
+		end)
+		if okPing and type(networkPing) == "number" and networkPing > 0 then
+			pingMs = math.round(networkPing * 1000)
+		else
+			local okStat, item = pcall(function()
+				local perf = Stats:FindFirstChild("PerformanceStats")
+				return perf and perf:FindFirstChild("Ping")
+			end)
+			if okStat and item and typeof(item.GetValue) == "function" then
+				local okVal, val = pcall(function()
+					return item:GetValue()
+				end)
+				if okVal and type(val) == "number" then
+					pingMs = math.round(val)
+				end
+			end
+		end
+
+		if pingMs then
+			pingLabel.Text = "Ping: " .. tostring(pingMs) .. " ms"
+			if pingMs <= 90 then
+				pingLabel.TextColor3 = PALETTE.Success
+			elseif pingMs <= 180 then
+				pingLabel.TextColor3 = PALETTE.Warn
+			else
+				pingLabel.TextColor3 = PALETTE.Error
+			end
+		else
+			pingLabel.Text = "Ping: N/A"
+			pingLabel.TextColor3 = PALETTE.SubText
+		end
+	end
+end)
+
+local cursorMeta = Instance.new("TextLabel")
+cursorMeta.Size = UDim2.new(0, 140, 0, 18)
+cursorMeta.Position = UDim2.new(1, -158, 0, 345)
+cursorMeta.BackgroundTransparency = 1
+cursorMeta.Text = "Ln 1, Col 1"
+cursorMeta.TextColor3 = PALETTE.Gutter
+cursorMeta.Font = Enum.Font.Code
+cursorMeta.TextSize = 11
+cursorMeta.TextXAlignment = Enum.TextXAlignment.Right
+cursorMeta.ZIndex = 3
+cursorMeta.Parent = window
+
+local function getCaretLineAndCol()
+	local pos = codeBox.CursorPosition
+	if not pos or pos < 1 then
+		return 1, 1
+	end
+	local prefix = codeBox.Text:sub(1, pos - 1)
+	local _, lineBreaks = prefix:gsub("\n", "\n")
+	local line = lineBreaks + 1
+	local lastBreak = prefix:match(".*()\n")
+	local col = lastBreak and (pos - lastBreak) or pos
+	return line, math.max(1, col)
+end
+
+local function updateCaretVisuals()
+	local line, col = getCaretLineAndCol()
+	cursorMeta.Text = string.format("Ln %d, Col %d", line, col)
+
+	local lineTop = 4 + (line - 1) * LINE_HEIGHT
+	activeLineBar.Position = UDim2.new(0, 4, 0, lineTop)
+
+	local linePx = (line - 1) * LINE_HEIGHT
+	local viewH = scroller.AbsoluteSize.Y
+	if viewH > 0 then
+		if linePx < scroller.CanvasPosition.Y then
+			scroller.CanvasPosition = Vector2.new(0, math.max(0, linePx - 8))
+		elseif linePx + LINE_HEIGHT + 6 > scroller.CanvasPosition.Y + viewH then
+			scroller.CanvasPosition = Vector2.new(0, math.max(0, linePx + LINE_HEIGHT + 6 - viewH))
+		end
+	end
+end
+
+codeBox.Focused:Connect(function()
+	tween(editorStroke, 0.14, { Color = PALETTE.BorderGlow, Transparency = 0.05 })
+	tween(activeLineBar, 0.14, { BackgroundTransparency = 0.25 })
+	updateCaretVisuals()
+end)
+
+codeBox.FocusLost:Connect(function()
+	tween(editorStroke, 0.14, { Color = PALETTE.Border, Transparency = 0.32 })
+	tween(activeLineBar, 0.14, { BackgroundTransparency = 0.55 })
+	persistState()
+end)
+
+codeBox:GetPropertyChangedSignal("CursorPosition"):Connect(updateCaretVisuals)
+
+local function syncEditorLayout()
+	local _, lineCount = codeBox.Text:gsub("\n", "\n")
+	local lines = math.max(1, lineCount + 1)
+	local rows = {}
+	for i = 1, lines do
+		rows[i] = tostring(i)
+	end
+	gutter.Text = table.concat(rows, "\n")
+
+	local neededHeight = math.max(214, lines * LINE_HEIGHT + 16)
+	scroller.CanvasSize = UDim2.new(0, 0, 0, neededHeight)
+	gutter.Size = UDim2.new(0, 32, 0, neededHeight - 8)
+	codeBox.Size = UDim2.new(1, -50, 0, neededHeight - 8)
+	updateCaretVisuals()
+end
+
+-- Tab Management & Persistence
+state.activeTab = math.clamp(tonumber(state.activeTab) or 1, 1, #state.tabs)
+local isSyncingText = false
+local renderTabs
+
+local function switchTab(index)
+	state.activeTab = math.clamp(index, 1, #state.tabs)
+	isSyncingText = true
+	codeBox.Text = tostring(state.tabs[state.activeTab].code or "")
+	isSyncingText = false
+	scroller.CanvasPosition = Vector2.new(0, 0)
+	syncEditorLayout()
+	persistState()
+	renderTabs()
+end
+
+renderTabs = function()
+	for _, child in ipairs(tabStrip:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+
+	local totalWidth = 0
+	for i, tabData in ipairs(state.tabs) do
+		local active = (i == state.activeTab)
+		local canClose = (#state.tabs > 1)
+		local tabWidth = canClose and 106 or 88
+
+		local tabBtn = Instance.new("TextButton")
+		tabBtn.Size = UDim2.new(0, tabWidth, 0, 26)
+		tabBtn.BackgroundColor3 = active and PALETTE.TabActive or PALETTE.TabIdle
+		tabBtn.Text = ""
+		tabBtn.AutoButtonColor = false
+		tabBtn.LayoutOrder = i
+		tabBtn.ZIndex = 4
+		tabBtn.Parent = tabStrip
+		round(tabBtn, 7)
+		stroke(tabBtn, active and PALETTE.BorderGlow or PALETTE.Border, 1, active and 0.1 or 0.4)
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, canClose and -26 or -12, 1, 0)
+		lbl.Position = UDim2.new(0, 8, 0, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = tostring(tabData.name or ("Script " .. i))
+		lbl.TextColor3 = active and Color3.new(1, 1, 1) or PALETTE.SubText
+		lbl.Font = active and Enum.Font.GothamBold or Enum.Font.GothamSemibold
+		lbl.TextSize = 11
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		lbl.ZIndex = 5
+		lbl.Parent = tabBtn
+
+		tabBtn.MouseButton1Click:Connect(function()
+			switchTab(i)
+		end)
+
+		if canClose then
+			local closeTab = Instance.new("TextButton")
+			closeTab.Size = UDim2.new(0, 18, 0, 18)
+			closeTab.Position = UDim2.new(1, -21, 0.5, -9)
+			closeTab.BackgroundTransparency = 1
+			closeTab.Text = "×"
+			closeTab.TextColor3 = active and Color3.new(1, 1, 1) or PALETTE.SubText
+			closeTab.Font = Enum.Font.GothamBold
+			closeTab.TextSize = 13
+			closeTab.ZIndex = 5
+			closeTab.Parent = tabBtn
+
+			closeTab.MouseButton1Click:Connect(function()
+				table.remove(state.tabs, i)
+				if state.activeTab >= i then
+					state.activeTab = math.max(1, state.activeTab - 1)
+				end
+				switchTab(state.activeTab)
+			end)
+		end
+
+		totalWidth += tabWidth + 6
+	end
+
+	local addBtn = Instance.new("TextButton")
+	addBtn.Size = UDim2.new(0, 28, 0, 26)
+	addBtn.BackgroundColor3 = PALETTE.BtnIdle
+	addBtn.Text = "+"
+	addBtn.TextColor3 = PALETTE.Text
+	addBtn.Font = Enum.Font.GothamBold
+	addBtn.TextSize = 15
+	addBtn.AutoButtonColor = false
+	addBtn.LayoutOrder = #state.tabs + 1
+	addBtn.ZIndex = 4
+	addBtn.Parent = tabStrip
+	round(addBtn, 7)
+	stroke(addBtn, PALETTE.Border, 1, 0.35)
+
+	addBtn.MouseEnter:Connect(function()
+		tween(addBtn, 0.12, { BackgroundColor3 = PALETTE.BtnHover })
+	end)
+	addBtn.MouseLeave:Connect(function()
+		tween(addBtn, 0.12, { BackgroundColor3 = PALETTE.BtnIdle })
+	end)
+	addBtn.MouseButton1Click:Connect(function()
+		local nextNum = #state.tabs + 1
+		table.insert(state.tabs, { name = "Script " .. tostring(nextNum), code = "" })
+		switchTab(#state.tabs)
+	end)
+
+	totalWidth += 34
+	tabStrip.CanvasSize = UDim2.new(0, totalWidth, 0, 0)
+end
+
+codeBox:GetPropertyChangedSignal("Text"):Connect(function()
+	if not isSyncingText and state.tabs[state.activeTab] then
+		state.tabs[state.activeTab].code = codeBox.Text
+	end
+	syncEditorLayout()
+end)
+
+switchTab(state.activeTab)
+
+-- Status Line
+local statusBar = Instance.new("TextLabel")
+statusBar.Size = UDim2.new(1, -182, 0, 18)
+statusBar.Position = UDim2.new(0, 18, 0, 345)
+statusBar.BackgroundTransparency = 1
+statusBar.Text = "Ready — Previous scripts restored"
+statusBar.TextColor3 = PALETTE.SubText
+statusBar.Font = Enum.Font.GothamMedium
+statusBar.TextSize = 11
+statusBar.TextXAlignment = Enum.TextXAlignment.Left
+statusBar.TextTruncate = Enum.TextTruncate.AtEnd
+statusBar.ZIndex = 3
+statusBar.Parent = window
+
+local function setStatus(msg, col)
+	statusBar.Text = msg
+	statusBar.TextColor3 = col or PALETTE.SubText
+end
+
+-- Bottom Action Controls
+local function makeActionBtn(text, xPos, width, isPrimary, callback)
+	local idleCol = isPrimary and PALETTE.Accent or PALETTE.BtnIdle
+	local hoverCol = isPrimary and PALETTE.AccentHover or PALETTE.BtnHover
+	local pressCol = isPrimary and PALETTE.AccentPress or PALETTE.BtnPress
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, width, 0, 34)
+	btn.Position = UDim2.new(0, xPos, 0, 370)
+	btn.BackgroundColor3 = idleCol
+	btn.BackgroundTransparency = 0.08
+	btn.TextColor3 = PALETTE.Text
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 13
+	btn.Text = text
+	btn.AutoButtonColor = false
+	btn.ZIndex = 3
+	btn.Parent = window
+	round(btn, 9)
+	stroke(btn, isPrimary and Color3.fromRGB(150, 202, 255) or PALETTE.Border, 1, 0.32)
+
+	btn.MouseEnter:Connect(function()
+		tween(btn, 0.12, { BackgroundColor3 = hoverCol })
+	end)
+	btn.MouseLeave:Connect(function()
+		tween(btn, 0.12, { BackgroundColor3 = idleCol })
+	end)
+	btn.MouseButton1Down:Connect(function()
+		tween(btn, 0.08, { BackgroundColor3 = pressCol })
+	end)
+	btn.MouseButton1Up:Connect(function()
+		tween(btn, 0.1, { BackgroundColor3 = hoverCol })
+	end)
+	btn.MouseButton1Click:Connect(callback)
+	return btn
+end
+
+local sharedScope = setmetatable({}, { __index = getfenv and getfenv() or _G })
+
+makeActionBtn("Execute", 18, 152, true, function()
+	local src = codeBox.Text
+	persistState()
+	if src:match("^%s*$") then
+		setStatus("Nothing to execute.", PALETTE.Error)
+		return
+	end
+	if typeof(loadstring) ~= "function" then
+		setStatus("loadstring() is not available in this context.", PALETTE.Error)
+		return
+	end
+
+	local fn, syntaxErr = loadstring(src)
+	if not fn then
+		setStatus("Syntax error: " .. tostring(syntaxErr), PALETTE.Error)
+		return
+	end
+
+	if typeof(setfenv) == "function" then
+		pcall(setfenv, fn, sharedScope)
+	end
+
+	setStatus("Executing...", PALETTE.AccentHover)
+	task.spawn(function()
+		local ok, out = pcall(fn)
+		if ok then
+			setStatus("Executed cleanly" .. (out ~= nil and (" (" .. tostring(out) .. ")") or ""), PALETTE.Success)
+		else
+			setStatus("Runtime error: " .. tostring(out), PALETTE.Error)
+		end
+	end)
+end)
+
+makeActionBtn("Clear", 178, 102, false, function()
+	codeBox.Text = ""
+	persistState()
+	setStatus("Tab cleared.", PALETTE.SubText)
+end)
+
+makeActionBtn("Save", 288, 102, false, function()
+	state.savedSnippet = codeBox.Text
+	persistState()
+	setStatus("All tabs & snippet saved.", PALETTE.Success)
+end)
+
+local presets = {
+	{
+		label = "Speed Boost",
+		code = [[local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+if hum then hum.WalkSpeed = 50 end
+return "WalkSpeed = 50"]],
+	},
+	{
+		label = "Reset Stats",
+		code = [[local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+if hum then hum.WalkSpeed = 16; hum.JumpPower = 50 end
+return "Stats reset"]],
+	},
+	{
+		label = "Load Saved",
+		code = "__LOAD_SAVED__",
+	},
+}
+local presetIdx = 0
+
+local hubBtn = makeActionBtn("Script Hub ⌄", 398, 148, false, function()
+	presetIdx = (presetIdx % #presets) + 1
+	local item = presets[presetIdx]
+	if item.code == "__LOAD_SAVED__" then
+		codeBox.Text = state.savedSnippet or ""
+		setStatus("Loaded saved snippet.", PALETTE.Success)
+	else
+		codeBox.Text = item.code
+		setStatus("Loaded preset: " .. item.label, PALETTE.AccentHover)
+	end
+	persistState()
+end)
+hubBtn.Font = Enum.Font.GothamSemibold
+hubBtn.TextSize = 12
